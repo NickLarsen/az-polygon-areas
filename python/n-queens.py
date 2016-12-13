@@ -5,6 +5,7 @@
 from __future__ import print_function
 import sys
 from ortools.constraint_solver import pywrapcp
+import numpy as np
 
 def main(N):
   # Creates the solver.
@@ -16,42 +17,45 @@ def main(N):
 
   # All rows must be different.
   solver.Add(solver.AllDifferent(queens))
+  
+  # trim the solution by setting the first location
+  # TODO: getting rid of all symmetry would be better, this will do for now
+  solver.Add(queens[0] == 0)
 
   # All columns must be different because the indices of queens are all different.
 
   # No two queens can be on the same diagonal.
-  solver.Add(solver.AllDifferent([queens[i] + i for i in range(N)]))
-  solver.Add(solver.AllDifferent([queens[i] - i for i in range(N)]))
+  #solver.Add(solver.AllDifferent([queens[i] + i for i in range(N)]))
+  #solver.Add(solver.AllDifferent([queens[i] - i for i in range(N)]))
 
   db = solver.Phase(queens,
                     solver.CHOOSE_FIRST_UNBOUND,
-                    solver.ASSIGN_MIN_VALUE)
+                    solver.ASSIGN_RANDOM_VALUE)
   solver.NewSearch(db)
 
   # Iterates through the solutions, displaying each.
-  num_solutions = 0
-
+  solutions = []
   while solver.NextSolution():
-    #Displays the solution just computed.
+    points = []
     for i in range(N):
-      for j in range(N):
-        if queens[j].Value() == i:
-          # There is a queen in column j, row i.
-          print("Q", end=" ")
-        else:
-          print("_", end=" ")
-      print()
-    print()
-    num_solutions += 1
+      points.append((i, queens[i].Value()))
+    # TODO: center the points for the calculation
+    pointsStd = np.std(map(np.linalg.norm, points))
+    solutions.append((points, pointsStd))
 
   solver.EndSearch()
 
   print()
-  print("Solutions found:", num_solutions)
+  print("Solutions found:", len(solutions))
   print("Time:", solver.WallTime(), "ms")
 
+  arranged = [str(s[0]) + "\n" for s in sorted(solutions, key=lambda sol: sol[1])]
+  with open(str(N) + ".points", "wb") as fp:
+    fp.writelines(arranged)
+      
+
 # By default, solve the 8x8 problem.
-N = 8
+N = 7
 
 if __name__ == "__main__":
   if len(sys.argv) > 1:
