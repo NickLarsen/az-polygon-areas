@@ -1,0 +1,262 @@
+﻿<!DOCTYPE html>
+
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <meta charset="utf-8" />
+    <title>board</title>
+    <style type="text/css">
+        html, body { position: relative;height: 100%;min-height: 100%;margin: 0;}
+        #board { position: absolute;left: 50%;top: 50%;height: 0;width: 0;z-index: 100;}
+        #board > div { position: absolute;width: 10px;height: 10px;background-color: black;}
+        #board > div.selected { background-color: red;}
+        #board > div.blocked { background-color: lightgray;}
+        #lines-canvas {position: absolute;top: 50%;left: 50%;z-index: 90;}
+        #polygons { position: absolute;top: 0;left: 0;padding: 15px;z-index: 110;}
+    </style>
+</head>
+<body>
+<div id="polygons">
+    <div id="polygon"></div>
+    <div id="polygon-best"></div>
+    <div id="polygon-worst"></div>
+</div>
+<canvas id="lines-canvas"></canvas>
+<div id="board"></div>
+<script type="text/javascript">
+    "use strict";
+
+    var numPoints = 11;
+    var model = { rows: [], cols: [], blocks: [], selected: [], lines: [] };
+    var b = document.getElementById("board");
+    var gutter = 50;
+    var pointOffset = 10 / 2;
+    var xmax = (numPoints - 1) / 2 * gutter + pointOffset;
+    for (var i = -xmax, ri = 0; i <= xmax; i += gutter, ri++) {
+        model.rows[ri] = model.rows[ri] || [];
+        for (var j = -xmax, ci = 0; j <= xmax; j += gutter, ci++) {
+            model.cols[ci] = model.cols[ci] || [];
+            var c = document.createElement("div");
+            c.setAttribute("c", ci);
+            c.setAttribute("r", ri);
+            c.setAttribute("b", 0);
+            c.style.left = j + "px";
+            c.style.top = i + "px";
+            b.appendChild(c);
+            model.rows[ri].push(c);
+            model.cols[ci].push(c);
+        }
+    }
+    var linesCanvas = document.getElementById("lines-canvas");
+    linesCanvas.style.marginTop = -xmax + "px";
+    linesCanvas.style.marginLeft = -xmax + "px";
+    linesCanvas.height = xmax * 2;
+    linesCanvas.width = xmax * 2;
+    var linesContext = linesCanvas.getContext("2d");
+    linesContext.lineWidth = 2;
+
+    function selectCell(c) {
+        model.selected.push(c);
+        c.classList.add("selected");
+        var col = model.cols[c.getAttribute("c")];
+        for (var i = 0; i < col.length; i++) {
+            var ci = col[i];
+            ci.setAttribute("b", parseInt(ci.getAttribute("b")) + 1);
+            if (ci !== c) {
+                ci.classList.add("blocked");
+            }
+        }
+        var row = model.rows[c.getAttribute("r")];
+        for (var j = 0; j < row.length; j++) {
+            var ri = row[j];
+            ri.setAttribute("b", parseInt(ri.getAttribute("b")) + 1);
+            if (ri !== c) {
+                ri.classList.add("blocked");
+            }
+        }
+    }
+
+    function unselectCell(c) {
+        var si = model.selected.indexOf(c);
+        model.selected.splice(si, 1);
+        c.classList.remove("selected");
+        var col = model.cols[c.getAttribute("c")];
+        for (var i = 0; i < col.length; i++) {
+            var ci = col[i];
+            var bnewc = ci.getAttribute("b") - 1;
+            ci.setAttribute("b", bnewc);
+            if (ci !== c && bnewc <= 0) {
+                ci.classList.remove("blocked");
+            }
+        }
+        var row = model.rows[c.getAttribute("r")];
+        for (var j = 0; j < row.length; j++) {
+            var ri = row[j];
+            var bnewr = ri.getAttribute("b") - 1;
+            ri.setAttribute("b", bnewr);
+            if (ri !== c && bnewr <= 0) {
+                ri.classList.remove("blocked");
+            }
+        }
+    }
+
+    function handleCellClick(event) {
+        var c = event.target;
+        if (c.classList.contains("blocked")) return;
+        if (c.classList.contains("selected")) unselectCell(c);
+        else selectCell(c);
+        updatePolygon();
+    }
+
+    b.addEventListener("click", handleCellClick);
+
+    // http://stackoverflow.com/questions/3838329/how-can-i-check-if-two-segments-intersect
+    function ccw(A, B, C) {
+        return (C.y - A.y) * (B.x - A.x) > (B.y - A.y) * (C.x - A.x);
+    }
+    function intersect(A, B, C, D) {
+        return ccw(A,C,D) !== ccw(B,C,D) && ccw(A, B, C) !== ccw(A, B, D);
+    }
+    function segmentsIntersect(a, b) {
+        if (a[0] === b[1] || a[1] === b[0]) return false; // short circuit joined segments
+        return intersect(a[0], a[1], b[0], b[1]);
+    }
+    function isPolygonValid(lineSegments) {
+        if (lineSegments === undefined) return false;
+        var slopes = {};
+        for (var i = 0; i < lineSegments.length; i++) {
+            var ls = lineSegments[i];
+            var slope = (ls[1].y - ls[0].y) / (ls[1].x - ls[0].x);
+            if (slopes[slope] != undefined) {
+                // TODO: float issues?
+                console.log("same slope: " + slope);
+                return false;
+            }
+            slopes[slope] = ls;
+        }
+        for (var ai = 0; ai < lineSegments.length; ai++) {
+            var a = lineSegments[ai];
+            for (var bi = ai + 1; bi < lineSegments.length; bi++) {
+                var b = lineSegments[bi];
+                if (segmentsIntersect(a, b)) {
+                    console.log("segments intersect: " + formatPolygon([a[0],a[1],b[0],b[1]]));
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    function makePolygon(points) {
+        if (points.length < 3) return undefined;
+        var segments = [];
+        for (var i = 0; i < points.length; i++) {
+            var otherIndex = (i + points.length - 1) % points.length;
+            segments.push([points[otherIndex], points[i]]);
+        }
+        return segments;
+    }
+
+    var p = document.getElementById("polygon");
+    var pb = document.getElementById("polygon-best");
+    var pw = document.getElementById("polygon-worst");
+    function formatPolygon(points) {
+        return points
+            .map(point => "(" + (point.x + 1) + "," + (point.y + 1) + ")")
+            .join(",");
+    }
+    function updatePolygon() {
+        p.innerText = "";
+        pb.innerText = "";
+        pw.innerText = "";
+        clearCanvas();
+        var points = [];
+        for (var i = 0; i < model.selected.length; i++) {
+            var c = model.selected[i];
+            var x = parseInt(c.getAttribute("c", ci));
+            var y = parseInt(c.getAttribute("r", ri));
+            points.push({ x, y });
+        }
+        var polygon = makePolygon(points);
+        if (isPolygonValid(polygon)) {
+            p.innerText = formatPolygon(points) + "  user area: " + polygonArea(points);
+            drawPolygon(points);
+        } else {
+            p.innerText = "invalid";
+            drawPolygon(points, "red");
+        }
+        if (model.selected.length === numPoints) {
+            var bestWorst = bestWorstPolygons(points);
+            pb.innerText = formatPolygon(bestWorst.bestPoints) + "  best area: " + bestWorst.bestScore;
+            drawPolygon(bestWorst.bestPoints, "green");
+            pw.innerText = formatPolygon(bestWorst.worstPoints) + "  worst area: " + bestWorst.worstScore;
+            drawPolygon(bestWorst.worstPoints, "black");
+        }
+    }
+    function clearCanvas() {
+        linesContext.clearRect(0, 0, linesCanvas.width, linesCanvas.height);
+    }
+    function drawPolygon(points, color) {
+        if (points === undefined) return;
+        linesContext.beginPath();
+        linesContext.strokeStyle = color || "blue";
+        var start = pointToPixel(points[points.length - 1]);
+        linesContext.moveTo(start.x, start.y);
+        for (var i = 0; i < points.length; i++) {
+            var p = pointToPixel(points[i]);
+            linesContext.lineTo(p.x, p.y);
+        }
+        linesContext.stroke();
+    }
+    function pointToPixel(point) {
+        return {
+            x: point.x * gutter + pointOffset,
+            y: point.y * gutter + pointOffset
+        };
+    }
+
+    // http://www.mathopenref.com/coordpolygonarea2.html
+    function polygonArea(points) {
+        var area = 0;
+        var pointLast = points[points.length - 1];
+        for (var i = 0; i < points.length; i++) {
+            var point = points[i];
+            area = area + (pointLast.x + point.x) * (pointLast.y - point.y);
+            pointLast = point;
+        }
+        return Math.abs(area) / 2;
+    }
+
+    function swap(a, x, y) {
+        var temp = a[x];
+        a[x] = a[y];
+        a[y] = temp;
+    }
+    function bestWorstPolygons(points) {
+        var result = {bestScore:0,worstScore:Infinity};
+        function selectNext(i) {
+            if (i === points.length) {
+                var area = polygonArea(points);
+                if (area > result.bestScore) {
+                    result.bestScore = area;
+                    result.bestPoints = points.slice(0);
+                }
+                if (area < result.worstScore) {
+                    result.worstScore = area;
+                    result.worstPoints = points.slice(0);
+                }
+                return;
+            }
+            for (var j = i; j < points.length; j++) {
+                swap(points, i, j);
+                if (i < 3 || isPolygonValid(makePolygon(points))) {
+                    selectNext(i + 1);
+                }
+                swap(points, i, j);
+            }
+        }
+        selectNext(1);
+        return result;
+    }
+</script>
+</body>
+</html>
