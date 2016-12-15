@@ -10,18 +10,21 @@
         #board > div { position: absolute;width: 10px;height: 10px;background-color: black;}
         #board > div.selected { background-color: red;}
         #board > div.blocked { background-color: lightgray;}
-        #lines-canvas {position: absolute;top: 50%;left: 50%;z-index: 90;}
+        .lines-canvas {position: absolute;top: 50%;left: 50%;z-index: 90;}
         #polygons { position: absolute;top: 0;left: 0;padding: 15px;z-index: 110;}
+        .hidden { opacity: 0; }
     </style>
 </head>
 <body>
 <div id="polygons">
-    <div id="polygon"></div>
-    <div id="polygon-best"></div>
-    <div id="polygon-worst"></div>
+    <div id="polygon" data-display="base"></div>
+    <div id="polygon-best" data-display="high"></div>
+    <div id="polygon-worst" data-display="low"></div>
 </div>
-<canvas id="lines-canvas"></canvas>
+<canvas id="lines-canvas" class="lines-canvas"></canvas>
 <div id="board"></div>
+<canvas id="lines-canvas-high" class="lines-canvas hidden"></canvas>
+<canvas id="lines-canvas-low" class="lines-canvas hidden"></canvas>
 <script type="text/javascript">
     "use strict";
 
@@ -46,13 +49,23 @@
             model.cols[ci].push(c);
         }
     }
-    var linesCanvas = document.getElementById("lines-canvas");
-    linesCanvas.style.marginTop = -xmax + "px";
-    linesCanvas.style.marginLeft = -xmax + "px";
-    linesCanvas.height = xmax * 2;
-    linesCanvas.width = xmax * 2;
-    var linesContext = linesCanvas.getContext("2d");
-    linesContext.lineWidth = 2;
+
+    function setupCanvasContext(element) {
+        var can = document.getElementById(element);
+        can.style.marginTop = -xmax + "px";
+        can.style.marginLeft = -xmax + "px";
+        can.height = xmax * 2;
+        can.width = xmax * 2;
+        var con = can.getContext("2d");
+        con.lineWidth = 2;
+        return con;
+    }
+
+    var linesContexts = {
+        base: setupCanvasContext("lines-canvas"),
+        high: setupCanvasContext("lines-canvas-high"),
+        low: setupCanvasContext("lines-canvas-low")
+    };
 
     function selectCell(c) {
         model.selected.push(c);
@@ -156,6 +169,7 @@
         return segments;
     }
 
+    var allp = document.getElementById("polygons");
     var p = document.getElementById("polygon");
     var pb = document.getElementById("polygon-best");
     var pw = document.getElementById("polygon-worst");
@@ -168,7 +182,9 @@
         p.innerText = "";
         pb.innerText = "";
         pw.innerText = "";
-        clearCanvas();
+        clearCanvas(linesContexts.base);
+        clearCanvas(linesContexts.high);
+        clearCanvas(linesContexts.low);
         var points = [];
         for (var i = 0; i < model.selected.length; i++) {
             var c = model.selected[i];
@@ -179,33 +195,37 @@
         var polygon = makePolygon(points);
         if (isPolygonValid(polygon)) {
             p.innerText = formatPolygon(points) + "  user area: " + polygonArea(points);
-            drawPolygon(points);
+            drawPolygon(linesContexts.base, points);
         } else {
             p.innerText = "invalid";
-            drawPolygon(points, "red");
+            drawPolygon(linesContexts.base, points, "red");
         }
         if (model.selected.length === numPoints) {
             var bestWorst = bestWorstPolygons(points);
-            pb.innerText = formatPolygon(bestWorst.bestPoints) + "  best area: " + bestWorst.bestScore;
-            drawPolygon(bestWorst.bestPoints, "green");
-            pw.innerText = formatPolygon(bestWorst.worstPoints) + "  worst area: " + bestWorst.worstScore;
-            drawPolygon(bestWorst.worstPoints, "black");
+            if (bestWorst.bestPoints) {
+                pb.innerText = formatPolygon(bestWorst.bestPoints) + "  best area: " + bestWorst.bestScore;
+                drawPolygon(linesContexts.high, bestWorst.bestPoints, "green");
+            }
+            if (bestWorst.worstPoints) {
+                pw.innerText = formatPolygon(bestWorst.worstPoints) + "  worst area: " + bestWorst.worstScore;
+                drawPolygon(linesContexts.low, bestWorst.worstPoints, "black");
+            }
         }
     }
-    function clearCanvas() {
-        linesContext.clearRect(0, 0, linesCanvas.width, linesCanvas.height);
+    function clearCanvas(context) {
+        context.clearRect(0, 0, context.canvas.width, context.canvas.height);
     }
-    function drawPolygon(points, color) {
+    function drawPolygon(context, points, color) {
         if (points === undefined) return;
-        linesContext.beginPath();
-        linesContext.strokeStyle = color || "blue";
+        context.beginPath();
+        context.strokeStyle = color || "blue";
         var start = pointToPixel(points[points.length - 1]);
-        linesContext.moveTo(start.x, start.y);
+        context.moveTo(start.x, start.y);
         for (var i = 0; i < points.length; i++) {
             var p = pointToPixel(points[i]);
-            linesContext.lineTo(p.x, p.y);
+            context.lineTo(p.x, p.y);
         }
-        linesContext.stroke();
+        context.stroke();
     }
     function pointToPixel(point) {
         return {
@@ -257,6 +277,24 @@
         selectNext(1);
         return result;
     }
+
+    function showContext(kind) {
+        for (var c in linesContexts) {
+            if (linesContexts.hasOwnProperty(c)) {
+                linesContexts[c].canvas.classList.add("hidden");
+            }
+        }
+        var con = linesContexts[kind] || linesContexts.base;
+        con.canvas.classList.remove("hidden");
+    }
+
+    function showLines(event) {
+        showContext(event.target.dataset.display);
+    }
+
+    pb.addEventListener("mouseover", showLines);
+    pw.addEventListener("mouseover", showLines);
+    allp.addEventListener("mouseout", showLines);
 </script>
 </body>
 </html>
