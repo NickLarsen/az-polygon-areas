@@ -34,32 +34,30 @@ def main(N):
 
   # Iterates through the solutions, displaying each.
   seen = set()
-  halfN = N / 2.0
-  with open(str(N) + ".points", "w+") as fp:
-    while solver.NextSolution():
-      points = []
-      centers = []
-      for i in range(N):
-        points.append((i+1, queens[i].Value()+1))
-        centers.append((i-halfN,queens[i].Value()-halfN))
-    
-      pointsCanonical = sym.canonicalHash([queens[i].Value() for i in range(N)])
-      if pointsCanonical in seen: continue
-      seen.add(pointsCanonical)
+  feasy = open(str(N) + ".points", "w+")
+  fcsv = open(str(N) + "-points.csv", "w+")
+  while solver.NextSolution():
+    points = []
+    for i in range(N):
+      points.append((i+1, queens[i].Value()+1))
+  
+    pointsCanonical = sym.canonicalHash([queens[i].Value() for i in range(N)])
+    if pointsCanonical in seen: continue
+    seen.add(pointsCanonical)
 
-      pointsStd = np.std(map(np.linalg.norm, centers))
-      outputline = str(points) + " " + str(pointsStd) + "\n"
-      fp.write(outputline)
+    solutionNumber = len(seen)
+    output = [str(p[0]) + "," + str(p[1]) + "," + str(solutionNumber) + "\n" for p in points]
+    fcsv.writelines(output)
+    output = str(points) + "\n"
+    feasy.write(output)
 
-    solver.EndSearch()
+    if solutionNumber >= 1000000: break
+
+  solver.EndSearch()
 
   print()
-  print("Solutions found:", len(solutions))
+  print("Solutions found:", len(seen))
   print("Time:", solver.WallTime(), "ms")
-
-  arranged = [str(s[0]) + " " + str(s[1]) + "\n" for s in sorted(solutions, key=lambda sol: sol[1])]
-  with open(str(N) + ".points", "w+") as fp:
-    fp.writelines(arranged)   
 
 # By default, solve the 8x8 problem.
 N = 7
