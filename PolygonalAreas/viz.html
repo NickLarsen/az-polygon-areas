@@ -126,47 +126,30 @@
     function ccw(A, B, C) {
         return (C.y - A.y) * (B.x - A.x) > (B.y - A.y) * (C.x - A.x);
     }
-    function intersect(A, B, C, D) {
+    function areIntersecting(A, B, C, D) {
+        if (A === D || B === C) return false; // short circuit joined segments
         return ccw(A,C,D) !== ccw(B,C,D) && ccw(A, B, C) !== ccw(A, B, D);
     }
-    function segmentsIntersect(a, b) {
-        if (a[0] === b[1] || a[1] === b[0]) return false; // short circuit joined segments
-        return intersect(a[0], a[1], b[0], b[1]);
-    }
-    function isPolygonValid(lineSegments) {
-        if (lineSegments === undefined) return false;
+    function isPolygonValid(points, skipCount = 0) {
         var slopes = {};
-        for (var i = 0; i < lineSegments.length; i++) {
-            var ls = lineSegments[i];
-            var slope = (ls[1].y - ls[0].y) / (ls[1].x - ls[0].x);
-            if (slopes[slope] != undefined) {
-                // TODO: float issues?
-                console.log("same slope: " + slope);
-                return false;
-            }
-            slopes[slope] = ls;
+        var numPoints = points.length;
+        for (var i = skipCount; i < numPoints; i++) {
+            var ls1 = points[i];
+            var ls0 = points[(i + numPoints - 1) % numPoints];
+            var slope = (ls1.y - ls0.y) / (ls1.x - ls0.x);
+            if (slopes[slope] != undefined) return false;
+            slopes[slope] = true;
         }
-        for (var ai = 0; ai < lineSegments.length; ai++) {
-            var a = lineSegments[ai];
-            for (var bi = ai + 1; bi < lineSegments.length; bi++) {
-                var b = lineSegments[bi];
-                if (segmentsIntersect(a, b)) {
-                    console.log("segments intersect: " + formatPolygon([a[0],a[1],b[0],b[1]]));
-                    return false;
-                }
+        for (var ai = skipCount; ai < numPoints; ai++) {
+            var a1 = points[ai];
+            var a0 = points[(ai + numPoints - 1) % numPoints];
+            for (var bi = ai + 1; bi < numPoints; bi++) {
+                var b1 = points[bi];
+                var b0 = points[(bi + numPoints - 1) % numPoints];
+                if (areIntersecting(a0, a1, b0, b1)) return false;
             }
         }
         return true;
-    }
-
-    function makePolygon(points, psuedo = 0) {
-        if (points.length < 3) return undefined;
-        var segments = [];
-        for (var i = psuedo; i < points.length; i++) {
-            var otherIndex = (i + points.length - 1) % points.length;
-            segments.push([points[otherIndex], points[i]]);
-        }
-        return segments;
     }
 
     var allp = document.getElementById("polygons");
@@ -192,8 +175,7 @@
             var y = parseInt(c.getAttribute("r", ri));
             points.push({ x, y });
         }
-        var polygon = makePolygon(points);
-        if (isPolygonValid(polygon)) {
+        if (isPolygonValid(points)) {
             p.innerText = formatPolygon(points) + "  user area: " + polygonArea(points);
             drawPolygon(linesContexts.base, points);
         } else {
@@ -254,7 +236,7 @@
     function bestWorstPolygons(points) {
         var result = {bestScore:0,worstScore:Infinity};
         function selectNext(i) {
-            if (i === points.length) {
+            if (i === points.length && isPolygonValid(points)) {
                 var area = polygonArea(points);
                 if (area > result.bestScore) {
                     result.bestScore = area;
@@ -268,7 +250,7 @@
             }
             for (var j = i; j < points.length; j++) {
                 swap(points, i, j);
-                if (i < 3 || isPolygonValid(makePolygon(points, 1))) {
+                if (i < 3 || isPolygonValid(points, 1)) {
                     selectNext(i + 1);
                 }
                 swap(points, i, j);
