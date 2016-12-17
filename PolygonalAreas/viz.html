@@ -159,10 +159,10 @@
         return true;
     }
 
-    function makePolygon(points) {
+    function makePolygon(points, psuedo = 0) {
         if (points.length < 3) return undefined;
         var segments = [];
-        for (var i = 0; i < points.length; i++) {
+        for (var i = psuedo; i < points.length; i++) {
             var otherIndex = (i + points.length - 1) % points.length;
             segments.push([points[otherIndex], points[i]]);
         }
@@ -268,7 +268,7 @@
             }
             for (var j = i; j < points.length; j++) {
                 swap(points, i, j);
-                if (i < 3 || isPolygonValid(makePolygon(points))) {
+                if (i < 3 || isPolygonValid(makePolygon(points, 1))) {
                     selectNext(i + 1);
                 }
                 swap(points, i, j);
